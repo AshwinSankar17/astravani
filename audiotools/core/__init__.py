@@ -1,0 +1,1 @@
+from audiotools.core.audio_signal import AudioSignal
