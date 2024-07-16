@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic.dataclasses import dataclass
 
-from audiotools.utils.helpers import stack_tensors, WINDOW_FN_SUPPORTED
+from astravani.utils.helpers import stack_tensors, WINDOW_FN_SUPPORTED
 
 
 @dataclass
@@ -87,7 +87,8 @@ class AudioSignal:
         self.signal = self.signal.to(device)
 
     def downmix_mono(self):
-        self.signal = torch.mean(self.signal, dim=-2, keepdims=True).to(self.signal)
+        if self.signal.size(-2) > 1:
+            self.signal = torch.mean(self.signal, dim=-2, keepdims=True).to(self.signal)
 
     def upmix_stereo(self):
         self.signal = torch.cat([self.signal] * 2, dim=-2).to(self.signal)
@@ -100,7 +101,7 @@ class AudioSignal:
         assert (
             end_idx <= self.num_frames
         ), f"Index out of bounds. Num frames in signal is {self.num_frames}."
-        return self.signal[..., start_idx:end_idx]
+        return AudioSignal(self.signal[..., start_idx:end_idx], self.sample_rate)
 
     def rand_slice_segment(self, segment_size: int):
         assert (
@@ -117,6 +118,12 @@ class AudioSignal:
 
     def to(self, *args, **kwargs):
         self.signal = self.signal.to(*args, **kwargs)
+    
+    def cuda(self, *args, **kwargs):
+        self.signal = self.signal.cuda(*args, **kwargs)
+    
+    def cpu(self, *args, **kwargs):
+        self.signal = self.signal.cpu(*args, **kwargs)
 
     @classmethod
     def from_list(cls, audios: List["AudioSignal"], sample_rate: int):

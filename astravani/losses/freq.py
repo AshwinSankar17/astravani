@@ -4,8 +4,8 @@ import torch
 import numpy as np
 import torchaudio as ta
 
-from audiotools.core import AudioSignal
-from audiotools.utils.helpers import apply_reduction
+from astravani.core import AudioSignal
+from astravani.utils.helpers import apply_reduction
 
 class SpectralConvergenceLoss(torch.nn.Module):
     """

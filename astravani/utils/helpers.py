@@ -1,6 +1,7 @@
 from typing import List
 
 import torch
+import random
 
 WINDOW_FN_SUPPORTED = {
     "hann": torch.hann_window,
@@ -43,3 +44,30 @@ def stack_tensors(
 
     stacked_tensor = torch.stack(padded_tensors)
     return stacked_tensor
+
+def generate_mask(x, p_cond=0.85, mask_span_length=128):
+    """
+    Generate a mask for the input tensor x.
+    
+    Parameters:
+    - x (Tensor): Input tensor of shape (num_frames, num_features).
+    - p_cond (float): Probability of applying the mask to a frame.
+    - mask_span_length (int): Minimum span length of frames to mask.
+    
+    Returns:
+    - mask (Tensor): Mask tensor of shape (num_frames, num_features), with 1s indicating masked positions and 0s indicating unmasked positions.
+    """
+    num_frames, num_features = x.size()
+    mask = torch.ones(num_frames, num_features)
+
+    mask_positions = []
+    for j in range(num_frames):
+        if random.random() < p_cond:
+            start_pos = max(0, j - mask_span_length // 2)
+            end_pos = min(num_frames, j + mask_span_length // 2)
+            mask_positions.extend(range(start_pos, end_pos))
+    
+    mask_positions = list(set(mask_positions))  # Remove duplicates
+    mask[mask_positions, :] = 0
+
+    return mask

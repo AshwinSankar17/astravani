@@ -1,4 +1,5 @@
-# Astravaani: Streamlined Audio Processing for Synthesis and Enhancement
+# (FORGING) Astravaani: Streamlined Audio Processing for Synthesis and Enhancement
+
 
 Astravaani is a Python project that simplifies audio processing for synthesis and enhancement. It provides four main classes: `AudioSignal`, `AudioDataset`, `TTSDataset`, and `LossFunctions`.
 
@@ -19,5 +20,5 @@ Astravaani is a Python project that simplifies audio processing for synthesis an
 To install Astravaani, you can use pip:
 
 ```bash
-pip install astravaani
+pip install -e .
 ```
