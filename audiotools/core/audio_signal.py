@@ -9,8 +9,6 @@ from pydantic.dataclasses import dataclass
 
 from audiotools.utils.helpers import stack_tensors, WINDOW_FN_SUPPORTED
 
-EPSILON = 1e-9
-
 
 @dataclass
 class AudioSignal:
@@ -170,15 +168,16 @@ class AudioSignal:
         n_fft: int,
         hop_length: int,
         win_length: int,
-        window: Optional[str] = "hann",
-        center: Optional[bool] = False,
-        normalized: Optional[bool] = False,
-        pwr: Optional[float] = 2.0,
+        window: str = "hann",
+        center: bool = False,
+        normalized: bool = False,
+        pwr: float = 2.0,
+        eps: float = 1e-9
     ):
         stft = self.stft(n_fft, hop_length, win_length, window, center, normalized)
         if stft.dtype in [torch.cfloat, torch.cdouble]:
             stft = stft.view_as_real(stft)
-        spec = torch.sqrt(stft.pow(pwr).sum(-1) + EPSILON)
+        spec = torch.sqrt(stft.pow(pwr).sum(-1) + eps)
         return spec.to(device=self.device)
 
     @torch.cuda.amp.autocast(enabled=False)
@@ -188,10 +187,11 @@ class AudioSignal:
         hop_length: int,
         win_length: int,
         n_mels: int,
-        window: Optional[str] = "hann",
-        center: Optional[bool] = False,
-        normalized: Optional[bool] = False,
-        pwr: Optional[float] = 2.0,
+        window: str = "hann",
+        center: bool = False,
+        normalized: bool = False,
+        pwr: float = 2.0,
+        eps: float = 1e-9
     ):
         spec = self.get_spec(
             n_fft, hop_length, win_length, window, center, normalized, pwr
@@ -205,7 +205,7 @@ class AudioSignal:
             norm="slaney",
         ).to(spec.device)
         mel_spec = torch.matmul(mel_filters, spec)
-        log_mel_spec = torch.log(mel_spec + EPSILON)
+        log_mel_spec = torch.log(mel_spec + eps)
         return log_mel_spec
 
     def detach(self):
