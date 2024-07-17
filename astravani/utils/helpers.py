@@ -1,7 +1,8 @@
+import json
+import random
 from typing import List
 
 import torch
-import random
 
 WINDOW_FN_SUPPORTED = {
     "hann": torch.hann_window,
@@ -11,6 +12,24 @@ WINDOW_FN_SUPPORTED = {
     "none": None,
 }
 
+SUP_DATA_TYPES_SET = {"speaker_id", "pitch", "energy", "reference_audio"}
+
+
+def read_manifest(path):
+    return list(map(json.loads, open(path, "r").readlines()))
+
+
+def write_manifest(path, manifest, ensure_ascii=False):
+    return open(path, "w").writelines(
+        [json.dumps(x, ensure_ascii=ensure_ascii) + "\n" for x in manifest]
+    )
+
+
+def update_tracker(tracker, data):
+    tracker["data_point"] += 1
+    tracker["time"] += data["duration"]
+
+
 def apply_reduction(losses, reduction="none"):
     """Apply reduction to collection of losses."""
     if reduction == "mean":
@@ -18,6 +37,7 @@ def apply_reduction(losses, reduction="none"):
     elif reduction == "sum":
         losses = losses.sum()
     return losses
+
 
 def stack_tensors(
     tensors: List[torch.Tensor], max_lens: List[int], pad_value: float = 0.0
@@ -45,15 +65,16 @@ def stack_tensors(
     stacked_tensor = torch.stack(padded_tensors)
     return stacked_tensor
 
+
 def generate_mask(x, p_cond=0.85, mask_span_length=128):
     """
     Generate a mask for the input tensor x.
-    
+
     Parameters:
     - x (Tensor): Input tensor of shape (num_frames, num_features).
     - p_cond (float): Probability of applying the mask to a frame.
     - mask_span_length (int): Minimum span length of frames to mask.
-    
+
     Returns:
     - mask (Tensor): Mask tensor of shape (num_frames, num_features), with 1s indicating masked positions and 0s indicating unmasked positions.
     """
@@ -66,7 +87,7 @@ def generate_mask(x, p_cond=0.85, mask_span_length=128):
             start_pos = max(0, j - mask_span_length // 2)
             end_pos = min(num_frames, j + mask_span_length // 2)
             mask_positions.extend(range(start_pos, end_pos))
-    
+
     mask_positions = list(set(mask_positions))  # Remove duplicates
     mask[mask_positions, :] = 0
 

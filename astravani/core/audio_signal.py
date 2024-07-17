@@ -1,13 +1,12 @@
-from typing import List, Union, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
+import numpy as np
 import torch
 import torchaudio as ta
-import numpy as np
-from pathlib import Path
-
 from pydantic.dataclasses import dataclass
 
-from astravani.utils.helpers import stack_tensors, WINDOW_FN_SUPPORTED
+from astravani.utils.helpers import WINDOW_FN_SUPPORTED, stack_tensors
 
 
 @dataclass
@@ -81,7 +80,7 @@ class AudioSignal:
     @property
     def device(self):
         return self.signal.device
-    
+
     @device.setter
     def device(self, device: Union[str, torch.device]):
         self.signal = self.signal.to(device)
@@ -118,10 +117,10 @@ class AudioSignal:
 
     def to(self, *args, **kwargs):
         self.signal = self.signal.to(*args, **kwargs)
-    
+
     def cuda(self, *args, **kwargs):
         self.signal = self.signal.cuda(*args, **kwargs)
-    
+
     def cpu(self, *args, **kwargs):
         self.signal = self.signal.cpu(*args, **kwargs)
 
@@ -161,7 +160,9 @@ class AudioSignal:
             n_fft=n_fft,
             hop_length=hop_length,
             win_length=win_length,
-            window=window_fn(win_length, periodic=False).to(dtype=torch.float, device=self.device)
+            window=window_fn(win_length, periodic=False).to(
+                dtype=torch.float, device=self.device
+            )
             if window_fn
             else None,
             center=center,
@@ -179,13 +180,31 @@ class AudioSignal:
         center: bool = False,
         normalized: bool = False,
         pwr: float = 2.0,
-        eps: float = 1e-9
+        eps: float = 1e-9,
     ):
         stft = self.stft(n_fft, hop_length, win_length, window, center, normalized)
         if stft.dtype in [torch.cfloat, torch.cdouble]:
             stft = stft.view_as_real(stft)
         spec = torch.sqrt(stft.pow(pwr).sum(-1) + eps)
         return spec.to(device=self.device)
+
+    @torch.cuda.amp.autocast(enabled=False)
+    def get_energy(
+        self,
+        n_fft: int,
+        hop_length: int,
+        win_length: int,
+        window: str = "hann",
+        center: bool = False,
+        normalized: bool = False,
+        pwr: float = 2.0,
+        eps: float = 1e-9,
+    ):
+        spec = self.get_spec(
+            n_fft, hop_length, win_length, window, center, normalized, pwr, eps
+        )
+        energy = torch.linalg.norm(spec.squeeze(0), axis=0).float()
+        return energy.to(device=self.device)
 
     @torch.cuda.amp.autocast(enabled=False)
     def get_log_mel(
@@ -198,7 +217,7 @@ class AudioSignal:
         center: bool = False,
         normalized: bool = False,
         pwr: float = 2.0,
-        eps: float = 1e-9
+        eps: float = 1e-9,
     ):
         spec = self.get_spec(
             n_fft, hop_length, win_length, window, center, normalized, pwr
@@ -213,7 +232,7 @@ class AudioSignal:
         ).to(spec.device)
         mel_spec = torch.matmul(mel_filters, spec)
         log_mel_spec = torch.log(mel_spec + eps)
-        return log_mel_spec
+        return log_mel_spec.to(device=self.device)
 
     def detach(self):
         self.signal = self.signal.detach()
