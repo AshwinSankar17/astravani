@@ -23,6 +23,7 @@ To install Astravaani, you can use pip:
 ```bash
 git clone https://github.com/iamunr4v31/astravani
 cd astravani
+conda env create --file=environment.yaml
 pip install -e .
 ```
 
