@@ -1,6 +1,6 @@
 # (FORGING) Astravaani: Streamlined Audio Processing for Synthesis and Enhancement
 
-Loosely inspired by [audiotools](https://github.com/descriptinc/audiotools/) and [auraloss](https://github.com/csteinmetz1/auraloss/), Astravaani is a project that simplifies audio processing for synthesis and enhancement. It provides three main classes: `AudioSignal`, `AudioDataset`, `TTSDataset` which implement basic functions needed to build a TTS and/or Speech Enhancement Network while just concentrating on the modelling part. Apart from this, I have also adapted some of the `LossFunctions` from auraloss.
+Loosely inspired by [audiotools](https://github.com/descriptinc/audiotools/) and [auraloss](https://github.com/csteinmetz1/auraloss/), Astravaani is a project that simplifies audio processing for synthesis and enhancement. It provides three main classes: `AudioSignal`, `AudioDataset`, `TTSDataset` which implement basic functions needed to build a TTS and/or Speech Enhancement Network while letting the user concentrate on the modelling part. Apart from this, I have also adapted some of the `LossFunctions` from auraloss.
 
 This project is currently under development and offers minimal functionality as of now.
 
