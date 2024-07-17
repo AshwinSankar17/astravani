@@ -10,7 +10,7 @@ class Tokenizer(ABC):
     PAD, BLANK, OOV = "<PAD>", "<BLANK>", "<OOV>"
 
     def __init__(self, vocab_file_or_list: List[str] | str | Path):
-        if isinstance(vocab_file_or_list, (str, Path)):
+        if isinstance(vocab_file_or_list, str) or isinstance(vocab_file_or_list, Path):
             with open(vocab_file_or_list, "r", encoding="utf-8") as f:
                 self.vocab = json.load(f)
                 self.__vocab_size = len(self.vocab)

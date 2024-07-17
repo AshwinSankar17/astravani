@@ -22,7 +22,7 @@ from astravani.utils.helpers import (
 )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AudioDataset(Dataset):
     """
     A PyTorch Dataset for handling audio data.
@@ -112,6 +112,7 @@ class AudioDataset(Dataset):
         }
 
 
+@dataclass(kw_only=True)
 class TTSDataset(AudioDataset):
     tokenizer: Tokenizer
     ### Spectrogram configs
