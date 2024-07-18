@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -155,8 +156,11 @@ class AudioSignal:
         normalized: Optional[bool] = False,
     ):
         window_fn = WINDOW_FN_SUPPORTED[window]
+        if self.signal.size(1) == 2:
+            logging.warning(f"{type(self).__name__} does not support stereo stft computation. Downmixing to mono")
+        self.downmix_mono()
         return torch.stft(
-            self.signal,
+            self.signal.squeeze(1),
             n_fft=n_fft,
             hop_length=hop_length,
             win_length=win_length,
@@ -183,9 +187,7 @@ class AudioSignal:
         eps: float = 1e-9,
     ):
         stft = self.stft(n_fft, hop_length, win_length, window, center, normalized)
-        if stft.dtype in [torch.cfloat, torch.cdouble]:
-            stft = stft.view_as_real(stft)
-        spec = torch.sqrt(stft.pow(pwr).sum(-1) + eps)
+        spec = stft.abs().pow(pwr) + eps
         return spec.to(device=self.device)
 
     @torch.cuda.amp.autocast(enabled=False)
@@ -203,11 +205,11 @@ class AudioSignal:
         spec = self.get_spec(
             n_fft, hop_length, win_length, window, center, normalized, pwr, eps
         )
-        energy = torch.linalg.norm(spec.squeeze(0), axis=0).float()
+        energy = torch.linalg.norm(spec, axis=1).float()
         return energy.to(device=self.device)
 
     @torch.cuda.amp.autocast(enabled=False)
-    def get_log_mel(
+    def get_mel(
         self,
         n_fft: int,
         hop_length: int,
@@ -215,7 +217,8 @@ class AudioSignal:
         n_mels: int,
         window: str = "hann",
         center: bool = False,
-        normalized: bool = False,
+        normalized: bool = True,
+        mel_scale: str = "htk",
         pwr: float = 2.0,
         eps: float = 1e-9,
     ):
@@ -227,12 +230,12 @@ class AudioSignal:
             n_mels=n_mels,
             sample_rate=self.sample_rate,
             f_min=0,
-            f_max=self.sample_rate / 2.0,
-            norm="slaney",
+            f_max=int(self.sample_rate // 2),
+            norm=None,
+            mel_scale=mel_scale
         ).to(spec.device)
-        mel_spec = torch.matmul(mel_filters, spec)
-        log_mel_spec = torch.log(mel_spec + eps)
-        return log_mel_spec.to(device=self.device)
+        mel_spec = torch.matmul(spec.transpose(-1, -2), mel_filters).transpose(-1, -2)
+        return mel_spec.to(device=self.device)
 
     def detach(self):
         self.signal = self.signal.detach()
