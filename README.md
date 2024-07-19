@@ -6,15 +6,13 @@ This project is currently under development and offers minimal functionality as 
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Usage](#usage)
-- [Classes](#classes)
-  - [AudioSignal](#audiosignal)
-  - [AudioDataset](#audiodataset)
-  - [TTSDataset](#ttsdataset)
-- [Loss Functions](#loss-functions)
-- [Contributing](#contributing)
-- [License](#license)
+- [(FORGING) Astravaani: Streamlined Audio Processing for Synthesis and Enhancement](#forging-astravaani-streamlined-audio-processing-for-synthesis-and-enhancement)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [1. AudioSignal](#1-audiosignal)
+    - [2. TTSDataset](#2-ttsdataset)
+    - [3. CharTokenizer](#3-chartokenizer)
 
 ## Installation
 
@@ -24,6 +22,17 @@ To install Astravaani, you can use pip:
 git clone https://github.com/iamunr4v31/astravani
 cd astravani
 conda env create --file=environment.yaml
+pip install -e .
+```
+
+or
+
+```bash
+git clone https://github.com/iamunr4v31/astravani
+cd astravani
+conda create -n astravani python=3.11
+conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+pip install -r requirements.txt
 pip install -e .
 ```
 

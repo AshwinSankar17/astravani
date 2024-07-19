@@ -10,7 +10,10 @@ from pydantic.dataclasses import dataclass
 from astravani.utils.helpers import WINDOW_FN_SUPPORTED, stack_tensors
 
 
-@dataclass
+class Config:
+    arbitrary_types_allowed = True
+
+@dataclass(config=Config)
 class AudioSignal:
     audio_path_or_array: Union[str, torch.Tensor, np.ndarray, Path]
     sample_rate: Optional[int] = None
