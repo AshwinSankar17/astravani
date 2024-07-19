@@ -160,6 +160,7 @@ class TTSDataset(AudioDataset):
             assert len(self.sup_data_types) == 0, "No supplementary data path provided."
 
         if self.sup_data_path is not None and 0 < len(self.sup_data_types):
+            assert self.sup_data_path, "To extract/use suplementary data, please provide path to store/load the data from."
             os.makedirs(self.sup_data_path, exist_ok=True)
             if "energy" in self.sup_data_types:
                 os.makedirs(os.path.join(self.sup_data_path, "energy"), exist_ok=True)
@@ -171,6 +172,9 @@ class TTSDataset(AudioDataset):
                 self.speaker_id_to_idx_map = defaultdict(set)
                 for i, d in enumerate(self.data):
                     self.speaker_id_to_idx_map[d["speaker_id"]].add(i)
+            
+            if "mel_spec" in self.sup_data_types:
+                os.makedirs(os.path.join(self.sup_data_path, "mel_spec"), exist_ok=True)
 
     def __sample_reference_audio(self, speaker_id: int):
         pool = self.speaker_id_to_idx_map[speaker_id]
@@ -207,6 +211,25 @@ class TTSDataset(AudioDataset):
                     )
                     torch.save(energy, energy_path)
                 energy_len = torch.tensor(energy.shape[-1]).long()
+            
+            mel_spec = None
+            mel_spec_len = None
+            if "mel_spec" in self.sup_data_types:
+                f_path = os.path.basename(audio_path)
+                mel_spec_path = os.path.join(self.sup_data_path, f"mel_spec/{f_path}.pt")
+                if os.path.exists(mel_spec_path):
+                    mel_spec = torch.load(mel_spec_path)
+                else:
+                    mel_spec = audio_signal.get_mel_spec(
+                        self.n_fft,
+                        self.hop_length,
+                        self.win_length,
+                        self.window,
+                        self.center,
+                        self.normalized,
+                    )
+                    torch.save(mel_spec, mel_spec_path)
+                mel_spec_len = torch.tensor(mel_spec.shape[-1]).long()
 
             pitch = None
             pitch_len = None
@@ -240,6 +263,8 @@ class TTSDataset(AudioDataset):
                 "energy_len": energy_len,
                 "pitch": pitch,
                 "pitch_len": pitch_len,
+                "mel_spec": mel_spec,
+                "mel_spec_len": mel_spec_len,
                 "reference_audio": reference_audio,
                 "referene_audio_len": reference_audio_len,
             }
@@ -253,12 +278,14 @@ class TTSDataset(AudioDataset):
             token_lens,
             energy_lens,
             pitch_lens,
+            mel_spec_lens,
             reference_audio_lens,
         ) = (
             batch["audio_len"],
             batch["text_len"],
             batch["energy_len"],
             batch["pitch_len"],
+            batch["mel_spec_len"],
             batch["referene_audio_len"],
         )
 
@@ -268,6 +295,9 @@ class TTSDataset(AudioDataset):
         )
         max_pitch_len = (
             max(pitch_lens).item() if "pitch" in self.sup_data_types else None
+        )
+        max_mel_spec_len = (
+            max(mel_spec_lens).item() if "mel_spec" in self.sup_data_types else None
         )
 
         if self.sort_batch_by == "audio":
@@ -287,6 +317,11 @@ class TTSDataset(AudioDataset):
         pitches = (
             stack_tensors(batch["pitch"], max_pitch_len)
             if "pitch" in self.sup_data_types
+            else None
+        )
+        mel_specs = (
+            stack_tensors(batch["mel_spec"], max_mel_spec_len)
+            if "mel_spec" in self.sup_data_types
             else None
         )
         reference_audios = (
@@ -312,6 +347,8 @@ class TTSDataset(AudioDataset):
             "energy_len": torch.stack(energy_lens),
             "pitch": pitches,
             "pitch_len": torch.stack(pitch_lens),
+            "mel_spec": mel_specs,
+            "mel_spec_len": torch.stack(mel_spec_lens),
             "reference_audio": reference_audios,
             "referene_audio_len": torch.stack(reference_audio_lens),
         }

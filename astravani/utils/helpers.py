@@ -12,7 +12,7 @@ WINDOW_FN_SUPPORTED = {
     "none": None,
 }
 
-SUP_DATA_TYPES_SET = {"speaker_id", "pitch", "energy", "reference_audio"}
+SUP_DATA_TYPES_SET = {"speaker_id", "pitch", "energy", "reference_audio", "mel_spec"}
 
 
 def read_manifest(path):
