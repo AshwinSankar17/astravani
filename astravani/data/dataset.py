@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Literal, Optional, Union
 
 import torch
-from pydantic.dataclasses import dataclass
+from dataclasses import dataclass
 from torch.utils.data import Dataset
 
 from astravani.core import AudioSignal
@@ -72,11 +72,11 @@ class AudioDataset(Dataset):
         logging.info(
             f"PRUNED: {pruned_data['data_point']} / {total_data['data_point']}"
         )
-        logging.info(f"PRUNED: {pruned_data['time']} / {total_data['time']}")
+        logging.info(f"PRUNED: {pruned_data['time'] / 3600} / {total_data['time'] / 3600} hours")
         logging.info(
             f"FILTERED: {filtered_data['data_point']} / {total_data['data_point']}"
         )
-        logging.info(f"FILTERED: {filtered_data['time']} / {total_data['time']}")
+        logging.info(f"FILTERED: {filtered_data['time'] / 3600} / {total_data['time'] / 3600} hours")
 
     def _filter_for_sliced_ds(self, item):
         return self.min_duration <= item["duration"]
@@ -90,7 +90,7 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
         audio_path = item["audio_path"]
-        audio_signal = AudioSignal(audio_path, sample_rate=self.sample_rate)
+        audio_signal = AudioSignal(audio_path_or_array=audio_path, sample_rate=self.sample_rate)
         if self.slice_audio and audio_signal.num_frames > self.max_frames:
             audio_signal = audio_signal.rand_slice_segment(self.max_frames)
 
@@ -104,7 +104,7 @@ class AudioDataset(Dataset):
     def collate_fn(self, batch):
         audio_signals = [item["audio_signal"] for item in batch]
         audio_lens = [item["audio_len"] for item in batch]
-        audio_signals = AudioSignal.from_list(audio_signals, self.sample_rate)
+        audio_signals = AudioSignal.from_list(audios=audio_signals, sample_rate=self.sample_rate)
         audio_lens = torch.stack(audio_lens)
         return {
             "audio_signals": audio_signals,
@@ -119,6 +119,7 @@ class TTSDataset(AudioDataset):
     n_fft: int = 1024
     hop_length: int = 256
     win_length: int = 1024
+    n_mels: int = 128
     window: str = "hann"
     center: bool = False
     normalized: bool = False
@@ -185,13 +186,13 @@ class TTSDataset(AudioDataset):
         item = self.data[idx]
         try:
             audio_path = item["audio_filepath"]
-            audio_signal = AudioSignal(audio_path, sample_rate=self.sample_rate)
+            audio_signal = AudioSignal(audio_path_or_array=audio_path, sample_rate=self.sample_rate)
             audio_len = torch.tensor(audio_signal.num_frames).long()
-            text_tokens = item["text_tokens"]
+            text_tokens = torch.tensor(item["text_tokens"]).long()
             token_len = torch.tensor(len(text_tokens)).long()
             speaker_id = None
             if "speaker_id" in self.sup_data_types:
-                speaker_id = item["speaker_id"]
+                speaker_id = torch.tensor(item["speaker_id"]).long()
 
             energy = None
             energy_len = None
@@ -210,6 +211,7 @@ class TTSDataset(AudioDataset):
                         self.normalized,
                     )
                     torch.save(energy, energy_path)
+                energy = energy.squeeze(0)
                 energy_len = torch.tensor(energy.shape[-1]).long()
             
             mel_spec = None
@@ -224,11 +226,13 @@ class TTSDataset(AudioDataset):
                         self.n_fft,
                         self.hop_length,
                         self.win_length,
+                        self.n_mels,
                         self.window,
                         self.center,
                         self.normalized,
                     )
                     torch.save(mel_spec, mel_spec_path)
+                mel_spec = mel_spec.squeeze(0)
                 mel_spec_len = torch.tensor(mel_spec.shape[-1]).long()
 
             pitch = None
@@ -248,7 +252,7 @@ class TTSDataset(AudioDataset):
             reference_audio_len = None
             if "reference_audio" in self.sup_data_types:
                 reference_audio = AudioSignal(
-                    self.__sample_reference_audio(speaker_id),
+                    audio_path_or_array=self.__sample_reference_audio(speaker_id),
                     sample_rate=self.sample_rate,
                 )
                 reference_audio_len = torch.tensor(reference_audio.num_frames).long()
@@ -256,9 +260,9 @@ class TTSDataset(AudioDataset):
             return {
                 "audio_signal": audio_signal,
                 "audio_len": audio_len,
-                "text": torch.tensor(text_tokens),
+                "text": text_tokens,
                 "text_len": token_len,
-                "speaker_id": torch.tensor(speaker_id),
+                "speaker_id": speaker_id,
                 "energy": energy,
                 "energy_len": energy_len,
                 "pitch": pitch,
@@ -269,10 +273,12 @@ class TTSDataset(AudioDataset):
                 "referene_audio_len": reference_audio_len,
             }
 
-        except Exception:
+        except Exception as e:
+            logging.warn(f"Skipping {idx} because of {e}")
             return self.__getitem__((idx + 1) % len(self))
 
     def collate_fn(self, batch):
+        batch = {key: [item[key] for item in batch] for key in batch[0]}
         (
             audio_lens,
             token_lens,
@@ -308,19 +314,19 @@ class TTSDataset(AudioDataset):
         audio_signal = AudioSignal.from_list(
             audios=batch["audio_signal"], sample_rate=self.sample_rate
         )
-        text_tokens = stack_tensors(batch["text"], max_token_len, self.tokenizer.pad_id)
+        text_tokens = stack_tensors(batch["text"], [max_token_len], self.tokenizer.pad_id)
         energies = (
-            stack_tensors(batch["energy"], max_energy_len)
+            stack_tensors(batch["energy"], [max_energy_len])
             if "energy" in self.sup_data_types
             else None
         )
         pitches = (
-            stack_tensors(batch["pitch"], max_pitch_len)
+            stack_tensors(batch["pitch"], [max_pitch_len])
             if "pitch" in self.sup_data_types
             else None
         )
         mel_specs = (
-            stack_tensors(batch["mel_spec"], max_mel_spec_len)
+            stack_tensors(batch["mel_spec"], [max_mel_spec_len])
             if "mel_spec" in self.sup_data_types
             else None
         )
@@ -344,11 +350,11 @@ class TTSDataset(AudioDataset):
             "text_len": torch.stack(token_lens),
             "speaker_id": speaker_ids,
             "energy": energies,
-            "energy_len": torch.stack(energy_lens),
+            "energy_len": torch.stack(energy_lens) if "energy" in self.sup_data_types else None,
             "pitch": pitches,
-            "pitch_len": torch.stack(pitch_lens),
+            "pitch_len": torch.stack(pitch_lens) if "pitch" in self.sup_data_types else None,
             "mel_spec": mel_specs,
-            "mel_spec_len": torch.stack(mel_spec_lens),
+            "mel_spec_len": torch.stack(mel_spec_lens) if "mel_spec" in self.sup_data_types else None,
             "reference_audio": reference_audios,
-            "referene_audio_len": torch.stack(reference_audio_lens),
+            "referene_audio_len": torch.stack(reference_audio_lens) if "reference_audio" in self.sup_data_types else None,
         }

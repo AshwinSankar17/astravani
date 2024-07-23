@@ -5,15 +5,12 @@ from typing import List, Optional, Union
 import numpy as np
 import torch
 import torchaudio as ta
-from pydantic.dataclasses import dataclass
+from dataclasses import dataclass
 
 from astravani.utils.helpers import WINDOW_FN_SUPPORTED, stack_tensors
 
 
-class Config:
-    arbitrary_types_allowed = True
-
-@dataclass(config=Config)
+@dataclass(kw_only=True)
 class AudioSignal:
     audio_path_or_array: Union[str, torch.Tensor, np.ndarray, Path]
     sample_rate: Optional[int] = None
@@ -143,7 +140,7 @@ class AudioSignal:
 
         batch_signal = stack_tensors(signals, [max_signal_len])
 
-        return AudioSignal(batch_signal, sample_rate)
+        return AudioSignal(audio_path_or_array=batch_signal, sample_rate=sample_rate)
 
     def clone(self):
         return AudioSignal(self.signal.clone(), self.sample_rate, self.device)
@@ -212,7 +209,7 @@ class AudioSignal:
         return energy.to(device=self.device)
 
     @torch.cuda.amp.autocast(enabled=False)
-    def get_mel(
+    def get_mel_spec(
         self,
         n_fft: int,
         hop_length: int,

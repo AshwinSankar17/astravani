@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List
 
-
 class Tokenizer(ABC):
     DEFAULT_PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
     PAD, BLANK, OOV = "<PAD>", "<BLANK>", "<OOV>"

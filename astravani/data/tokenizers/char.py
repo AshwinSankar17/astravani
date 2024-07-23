@@ -5,6 +5,8 @@ import numpy as np
 
 from astravani.data.tokenizers import Tokenizer
 
+def default_preprocessing(x):
+    return x
 
 class CharacterTokenizer(Tokenizer):
     def __init__(
@@ -13,12 +15,13 @@ class CharacterTokenizer(Tokenizer):
         stress=True,
         instersperse_blanks=True,
         replace_with_oov=False,
-        text_preprocessing_func=lambda x: x,
+        text_preprocessing_func=default_preprocessing,
     ):
         super().__init__(vocab_file_or_list=vocab_file_or_list)
         self.stress = stress
         self.instersperse_blanks = instersperse_blanks
         self.replace_with_oov = replace_with_oov
+        self.text_preprocessing_func = text_preprocessing_func
 
     def encode(self, text: str) -> List[int]:
         codes, space = [], self.vocab[" "]
