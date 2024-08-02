@@ -32,23 +32,21 @@ class AudioSignal:
                 "audio_path_or_array should either be Path, string, or a torch Tensor"
             )
 
-    def load_from_path(self, path: Union[str, Path], sample_rate: Optional[int] = None):
+    def load_from_path(self, path: Union[str, Path]):
         audio, sr = ta.load(path)
         assert audio.size(1) > 0, f"Empty audio file: {path}"
 
-        if sample_rate is not None:
-            audio = ta.functional.resample(audio, sr, sample_rate)
-            self.sample_rate = sample_rate
-        elif self.sample_rate is not None:
+        # if sample_rate is not None:
+        #     audio = ta.functional.resample(audio, sr, sample_rate)
+        #     self.sample_rate = sample_rate
+        if self.sample_rate is not None:
             audio = ta.functional.resample(audio, sr, self.sample_rate)
         else:
             self.sample_rate = sr
 
         self.signal = audio.unsqueeze(0)
 
-    def load_from_array(
-        self, array: Union[torch.Tensor, np.ndarray], sample_rate: Optional[int] = None
-    ):
+    def load_from_array(self, array: Union[torch.Tensor, np.ndarray]):
         if isinstance(array, np.ndarray):
             audio = torch.from_numpy(array)
         else:
@@ -56,7 +54,7 @@ class AudioSignal:
 
         assert audio.size(-1) > 0, "Empty audio array"
 
-        self.sample_rate = sample_rate
+        # self.sample_rate = sample_rate
         # if sample_rate is not None and sample_rate != self.sample_rate:
         #     audio = ta.functional.resample(audio, sample_rate, self.sample_rate)
 
@@ -101,7 +99,8 @@ class AudioSignal:
         assert (
             end_idx <= self.num_frames
         ), f"Index out of bounds. Num frames in signal is {self.num_frames}."
-        return AudioSignal(self.signal[..., start_idx:end_idx], self.sample_rate)
+        
+        return AudioSignal(audio_path_or_array=self.signal[..., start_idx:end_idx], sample_rate=self.sample_rate)
 
     def rand_slice_segment(self, segment_size: int):
         assert (

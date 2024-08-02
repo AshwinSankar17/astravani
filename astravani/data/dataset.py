@@ -21,6 +21,9 @@ from astravani.utils.helpers import (
     update_tracker,
 )
 
+def has_nan(tensor):
+    return torch.isnan(tensor).any().item()
+
 
 @dataclass(kw_only=True)
 class AudioDataset(Dataset):
@@ -36,10 +39,21 @@ class AudioDataset(Dataset):
     """
 
     manifest_fpaths: Union[str, Path, List[str], List[Path]]
-    sample_rate: int
+    sample_rate: int = 24_000
     min_duration: float = 0.58
     max_duration: float = 5.0
     slice_audio: bool = True
+    ### Spectrogram configs
+    n_fft: int = 1024
+    hop_length: int = 256
+    win_length: int = 1024
+    n_mels: int = 128
+    window: str = "hann"
+    center: bool = False
+    normalized: bool = True
+    ### Supplementary data params
+    sup_data_types: Optional[List[str]] = None
+    sup_data_path: Optional[str] = None
 
     def __post_init__(self):
         self.max_frames = int(self.max_duration * self.sample_rate)
@@ -68,87 +82,15 @@ class AudioDataset(Dataset):
         self.data = data
 
         logging.info(f"TOTAL DATAPOINTS FOUND: {total_data['data_point']}")
-        logging.info(f"TOTAL DURATION FOUND: {total_data['time'] / 3600} hours")
+        logging.info(f"TOTAL DURATION FOUND: {total_data['time'] / 3600:.2f} hours")
         logging.info(
             f"PRUNED: {pruned_data['data_point']} / {total_data['data_point']}"
         )
-        logging.info(f"PRUNED: {pruned_data['time'] / 3600} / {total_data['time'] / 3600} hours")
+        logging.info(f"PRUNED: {pruned_data['time'] / 3600} / {total_data['time'] / 3600:.2f} hours")
         logging.info(
             f"FILTERED: {filtered_data['data_point']} / {total_data['data_point']}"
         )
-        logging.info(f"FILTERED: {filtered_data['time'] / 3600} / {total_data['time'] / 3600} hours")
-
-    def _filter_for_sliced_ds(self, item):
-        return self.min_duration <= item["duration"]
-
-    def _filter_ds(self, item):
-        return self.min_duration <= item["duration"] <= self.max_duration
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        item = self.data[idx]
-        audio_path = item["audio_path"]
-        audio_signal = AudioSignal(audio_path_or_array=audio_path, sample_rate=self.sample_rate)
-        if self.slice_audio and audio_signal.num_frames > self.max_frames:
-            audio_signal = audio_signal.rand_slice_segment(self.max_frames)
-
-        audio_signal = audio_signal.downmix_mono()
-        audio_len = torch.tensor(audio_signal.num_frames).long()
-        return {
-            "audio_signal": audio_signal,
-            "audio_len": audio_len,
-        }
-
-    def collate_fn(self, batch):
-        audio_signals = [item["audio_signal"] for item in batch]
-        audio_lens = [item["audio_len"] for item in batch]
-        audio_signals = AudioSignal.from_list(audios=audio_signals, sample_rate=self.sample_rate)
-        audio_lens = torch.stack(audio_lens)
-        return {
-            "audio_signals": audio_signals,
-            "audio_lens": audio_lens,
-        }
-
-
-@dataclass(kw_only=True)
-class TTSDataset(AudioDataset):
-    tokenizer: Tokenizer
-    ### Spectrogram configs
-    n_fft: int = 1024
-    hop_length: int = 256
-    win_length: int = 1024
-    n_mels: int = 128
-    window: str = "hann"
-    center: bool = False
-    normalized: bool = False
-
-    ### Supplementary data params
-    sup_data_types: Optional[List[str]] = None
-    sup_data_path: Optional[str] = None
-
-    ### curriculum learning params
-    sort_batch_by: Optional[Literal["audio", "text"]] = False
-
-    def __post_init__(self):
-        if self.slice_audio:
-            logging.warning(
-                "slice_audio is not supported for TTSDataset. Setting slice_audio to False."
-            )
-            self.slice_audio = False
-
-        super().__post_init__()
-
-        if self.sup_data_types is None:
-            self.sup_data_types = []
-
-        for i, item in enumerate(self.data):
-            text = item.get("text")
-            text_tokens = self.tokenizer.encode(text)
-            item["text_tokens"] = text_tokens
-            if text is None:
-                raise ValueError(f"No text data found for item at index {i}")
+        logging.info(f"FILTERED: {filtered_data['time'] / 3600} / {total_data['time'] / 3600:.2f} hours")
 
         for sup_data_type in self.sup_data_types:
             if sup_data_type not in SUP_DATA_TYPES_SET:
@@ -182,14 +124,26 @@ class TTSDataset(AudioDataset):
         idx = random.sample(pool, 1)[0]
         return self.data[idx]["audio_filepath"]
 
+    def _filter_for_sliced_ds(self, item):
+        return self.min_duration <= item["duration"]
+
+    def _filter_ds(self, item):
+        return self.min_duration <= item["duration"] <= self.max_duration
+
+    def __len__(self):
+        return len(self.data)
+
     def __getitem__(self, idx):
         item = self.data[idx]
         try:
             audio_path = item["audio_filepath"]
             audio_signal = AudioSignal(audio_path_or_array=audio_path, sample_rate=self.sample_rate)
+            if self.slice_audio and audio_signal.num_frames > self.max_frames:
+                audio_signal = audio_signal.rand_slice_segment(self.max_frames)
+
+            audio_signal.downmix_mono()
+            
             audio_len = torch.tensor(audio_signal.num_frames).long()
-            text_tokens = torch.tensor(item["text_tokens"]).long()
-            token_len = torch.tensor(len(text_tokens)).long()
             speaker_id = None
             if "speaker_id" in self.sup_data_types:
                 speaker_id = torch.tensor(item["speaker_id"]).long()
@@ -197,9 +151,9 @@ class TTSDataset(AudioDataset):
             energy = None
             energy_len = None
             if "energy" in self.sup_data_types:
-                f_path = os.path.basename(audio_path)
+                f_path = os.path.basename(audio_path).replace(".wav", "")
                 energy_path = os.path.join(self.sup_data_path, f"energy/{f_path}.pt")
-                if os.path.exists(energy_path):
+                if os.path.exists(energy_path) and not self.slice_audio:
                     energy = torch.load(energy_path)
                 else:
                     energy = audio_signal.get_energy(
@@ -212,14 +166,16 @@ class TTSDataset(AudioDataset):
                     )
                     torch.save(energy, energy_path)
                 energy = energy.squeeze(0)
+                if has_nan(energy):
+                    raise ValueError(f"Energy tensor of {item['filepath']} has nan values")
                 energy_len = torch.tensor(energy.shape[-1]).long()
             
             mel_spec = None
             mel_spec_len = None
             if "mel_spec" in self.sup_data_types:
-                f_path = os.path.basename(audio_path)
+                f_path = os.path.basename(audio_path).replace(".wav", "")
                 mel_spec_path = os.path.join(self.sup_data_path, f"mel_spec/{f_path}.pt")
-                if os.path.exists(mel_spec_path):
+                if os.path.exists(mel_spec_path) and not self.slice_audio:
                     mel_spec = torch.load(mel_spec_path)
                 else:
                     mel_spec = audio_signal.get_mel_spec(
@@ -233,14 +189,16 @@ class TTSDataset(AudioDataset):
                     )
                     torch.save(mel_spec, mel_spec_path)
                 mel_spec = mel_spec.squeeze(0)
+                if has_nan(mel_spec):
+                    raise ValueError(f"Spectrogram tensor of {item['filepath']} has nan values")
                 mel_spec_len = torch.tensor(mel_spec.shape[-1]).long()
 
             pitch = None
             pitch_len = None
             if "pitch" in self.sup_data_types:
-                f_path = os.path.basename(audio_path)
+                f_path = os.path.basename(audio_path).replace(".wav", "")
                 pitch_path = os.path.join(self.sup_data_path, f"pitch/{f_path}.pt")
-                if os.path.exists(pitch_path):
+                if os.path.exists(pitch_path) and not self.slice_audio:
                     pitch = torch.load(pitch_path)
                 else:
                     raise logging.error(
@@ -260,8 +218,6 @@ class TTSDataset(AudioDataset):
             return {
                 "audio_signal": audio_signal,
                 "audio_len": audio_len,
-                "text": text_tokens,
-                "text_len": token_len,
                 "speaker_id": speaker_id,
                 "energy": energy,
                 "energy_len": energy_len,
@@ -271,8 +227,8 @@ class TTSDataset(AudioDataset):
                 "mel_spec_len": mel_spec_len,
                 "reference_audio": reference_audio,
                 "referene_audio_len": reference_audio_len,
+                "idx": idx,
             }
-
         except Exception as e:
             logging.warn(f"Skipping {idx} because of {e}")
             return self.__getitem__((idx + 1) % len(self))
@@ -281,21 +237,18 @@ class TTSDataset(AudioDataset):
         batch = {key: [item[key] for item in batch] for key in batch[0]}
         (
             audio_lens,
-            token_lens,
             energy_lens,
             pitch_lens,
             mel_spec_lens,
             reference_audio_lens,
         ) = (
             batch["audio_len"],
-            batch["text_len"],
             batch["energy_len"],
             batch["pitch_len"],
             batch["mel_spec_len"],
             batch["referene_audio_len"],
         )
-
-        max_token_len = max(token_lens).item()
+        
         max_energy_len = (
             max(energy_lens).item() if "energy" in self.sup_data_types else None
         )
@@ -306,15 +259,10 @@ class TTSDataset(AudioDataset):
             max(mel_spec_lens).item() if "mel_spec" in self.sup_data_types else None
         )
 
-        if self.sort_batch_by == "audio":
-            batch = sorted(batch, key=lambda x: x["audio_len"])
-        elif self.sort_batch_by == "text":
-            batch = sorted(batch, key=lambda x: x["text_len"])
-
         audio_signal = AudioSignal.from_list(
             audios=batch["audio_signal"], sample_rate=self.sample_rate
         )
-        text_tokens = stack_tensors(batch["text"], [max_token_len], self.tokenizer.pad_id)
+
         energies = (
             stack_tensors(batch["energy"], [max_energy_len])
             if "energy" in self.sup_data_types
@@ -346,8 +294,6 @@ class TTSDataset(AudioDataset):
         return {
             "audio_signal": audio_signal,
             "audio_len": torch.stack(audio_lens),
-            "text": text_tokens,
-            "text_len": torch.stack(token_lens),
             "speaker_id": speaker_ids,
             "energy": energies,
             "energy_len": torch.stack(energy_lens) if "energy" in self.sup_data_types else None,
@@ -358,3 +304,64 @@ class TTSDataset(AudioDataset):
             "reference_audio": reference_audios,
             "referene_audio_len": torch.stack(reference_audio_lens) if "reference_audio" in self.sup_data_types else None,
         }
+
+
+@dataclass(kw_only=True)
+class TTSDataset(AudioDataset):
+    tokenizer: Tokenizer
+    slice_audio: bool = False # override AudioDataset
+    ### curriculum learning params
+    sort_batch_by: Optional[Literal["audio", "text"]] = False
+
+    def __post_init__(self):
+        if self.slice_audio:
+            logging.warning(
+                "slice_audio is not intended to be used with TTSDataset. If this was not intentional, please set slice_audio to False before proceeding."
+            )
+            # self.slice_audio = False
+
+        super().__post_init__()
+
+        if self.sup_data_types is None:
+            self.sup_data_types = []
+
+        for i, item in enumerate(self.data):
+            text = item.get("text")
+            text_tokens = self.tokenizer.encode(text)
+            item["text_tokens"] = text_tokens
+            if text is None:
+                raise ValueError(f"No text data found for item at index {i}")
+
+    def __getitem__(self, idx):
+        try:
+            audio_ds_item = super().__getitem__(idx)
+            item = self.data[audio_ds_item["idx"]]
+            text_tokens = torch.tensor(item["text_tokens"]).long()
+            token_len = torch.tensor(len(text_tokens)).long()
+            return {
+                **audio_ds_item,
+                "text": text_tokens,
+                "text_len": token_len,
+            }
+        except Exception as e:
+            logging.warn(f"Skipping {idx} because of {e}")
+            return self.__getitem__((idx + 1) % len(self))
+
+    def collate_fn(self, batch):
+        batch_n = {key: [item[key] for item in batch] for key in batch[0]}
+        audio_batch = super().collate_fn(batch)
+
+        token_lens = batch_n["text_len"]
+        max_token_len = max(token_lens).item()
+        text_tokens = stack_tensors(batch_n["text"], [max_token_len], self.tokenizer.pad_id)
+
+        batch = {
+            **audio_batch,
+            "text": text_tokens,
+            "text_len": torch.stack(token_lens),
+        }
+        if self.sort_batch_by == "audio":
+            batch = sorted(batch, key=lambda x: x["audio_len"])
+        elif self.sort_batch_by == "text":
+            batch = sorted(batch, key=lambda x: x["text_len"])
+        return batch
